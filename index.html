@@ -5,8 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <meta name="theme-color" content="#14161a">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Workout">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>Iron Log</title>
+<title>Workout Tracker</title>
 <style>
   :root{
     --bg:#14161a; --panel:#1b1e25; --panel2:#22262f; --line:#2c313c;
@@ -73,6 +74,8 @@
   .exwrap.open .exhead{background:var(--panel2)}
   .last{font-size:12px; color:var(--brass); background:rgba(224,165,63,.08); border:1px dashed var(--brass-d); border-radius:8px; padding:7px 10px; margin-bottom:10px}
   .last b{color:var(--ink); font-weight:600}
+  .coach{font-size:12.5px; color:var(--blue); background:rgba(90,169,230,.08); border:1px solid rgba(90,169,230,.25); border-radius:8px; padding:8px 10px; margin-bottom:10px; line-height:1.35}
+  .prbadge{display:inline-block; font-size:10px; font-weight:800; letter-spacing:.06em; background:var(--brass); color:#1a1205; padding:2px 7px; border-radius:999px; margin-left:6px}
   .setrow{display:grid; grid-template-columns:16px 1fr 1fr 40px 22px; align-items:center; gap:6px; margin-bottom:8px}
   .setrow.head{margin-bottom:4px}
   .setrow.head span{font-size:11px; color:var(--dim); font-weight:600; text-align:center}
@@ -137,6 +140,8 @@
   .seg button.on{background:var(--brass); color:#1a1205}
 
   /* modal / toast */
+  .restpill{position:fixed; left:50%; transform:translateX(-50%); bottom:calc(140px + var(--safe-b)); background:var(--brass); color:#1a1205; padding:9px 16px; border-radius:999px; font-weight:800; font-size:14px; z-index:70; display:none; align-items:center; gap:7px; cursor:pointer; box-shadow:0 6px 18px rgba(0,0,0,.45)}
+  .restpill span{font-size:16px}
   .toast{position:fixed; left:50%; transform:translateX(-50%); bottom:calc(90px + var(--safe-b)); background:var(--ink); color:var(--bg); padding:11px 18px; border-radius:999px; font-weight:700; font-size:14px; z-index:100; opacity:0; transition:opacity .2s, transform .2s; pointer-events:none}
   .toast.show{opacity:1; transform:translateX(-50%) translateY(-4px)}
   .sheet-bg{position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:80; display:none; align-items:flex-end}
@@ -152,7 +157,7 @@
 
   <!-- TODAY -->
   <section class="screen on" id="s-today">
-    <div class="top"><div class="brand">Iron<b>Log</b></div><div class="sub" id="today-date"></div></div>
+    <div class="top"><div class="brand">Workout <b>Tracker</b></div><div class="sub" id="today-date"></div></div>
     <div id="hero-slot"></div>
     <h2>Pick a session</h2>
     <div id="picker"></div>
@@ -198,6 +203,9 @@
         <button class="chip" data-t="180">3:00</button>
       </div>
       <div class="grid2"><button class="btn ghost" id="tmr-startstop">Start</button><button class="btn ghost" id="tmr-reset">Reset</button></div>
+      <label style="display:flex;align-items:center;gap:10px;margin-top:14px;color:var(--mut);font-size:13.5px">
+        <input type="checkbox" id="auto-rest" style="width:20px;height:20px;accent-color:var(--brass)"> Auto-start 90s rest when I check off a set
+      </label>
     </div>
 
     <h2>Plate calculator</h2>
@@ -239,6 +247,7 @@
   <button data-go="tools"><svg viewBox="0 0 24 24"><path d="M14 7l3 3-8 8-3-3zM17 4l3 3-2 2-3-3z"/></svg>Tools</button>
 </nav>
 
+<div class="restpill" id="restpill"><span class="num">0:00</span> rest · tap to stop</div>
 <div class="toast" id="toast"></div>
 <div class="sheet-bg" id="sheetbg"><div class="sheet" id="sheet"></div></div>
 
@@ -327,6 +336,42 @@ function lastSets(name){
   for(const ses of s){ if(ses.entries && ses.entries[name] && ses.entries[name].some(x=>x.reps||x.weight)) return {sets:ses.entries[name],ts:ses.date}; }
   return null;
 }
+/* all past performances of one exercise, newest first */
+function exHistory(name){
+  const out=[];
+  sessions().forEach(s=>{
+    if(s.entries&&s.entries[name]){
+      const sets=s.entries[name].filter(x=>x.reps);
+      if(sets.length)out.push({date:s.date,sets,id:s.id});
+    }
+  });
+  return out;
+}
+/* Epley estimated 1RM */
+const e1rm=(w,r)=>{w=+w||0;r=+r||0;return (w<=0||r<=0)?0:w*(1+r/30);};
+function bestE1rm(name,excludeId){
+  let best=0;
+  exHistory(name).forEach(h=>{if(h.id===excludeId)return;h.sets.forEach(s=>{const v=e1rm(s.weight,s.reps);if(v>best)best=v;});});
+  return best;
+}
+const topRep=r=>{const m=(""+r).match(/(\d+)\s*-\s*(\d+)/);if(m)return +m[2];const n=(""+r).match(/\d+/);return n?+n[0]:0;};
+
+/* progression guidance from the last few sessions */
+function suggest(ex){
+  const h=exHistory(ex.n), top=topRep(ex.r);
+  if(!h.length)return{txt:"First time — pick a weight you could do 2 more reps with.",w:""};
+  const last=h[0], lw=Math.max(...last.sets.map(s=>+s.weight||0));
+  const hitAll = top>0 && last.sets.length>=ex.s && last.sets.slice(0,ex.s).every(s=>+s.reps>=top);
+  const step = ex.bar?5:2.5;
+  if(ex.bw && !lw) return hitAll?{txt:`Hit ${top} on every set — add reps or start adding weight.`,w:""}:{txt:`Last time ${last.sets.map(s=>s.reps).join("/")} reps. Beat one of those.`,w:""};
+  if(hitAll) return {txt:`Hit all ${top}s at ${lw} — go up to ${lw+step}.`,w:lw+step};
+  // stall check: same top weight 3 sessions running without hitting target
+  const sameW = h.slice(0,3).filter(x=>Math.max(...x.sets.map(s=>+s.weight||0))===lw).length;
+  if(sameW>=3) return {txt:`Stalled at ${lw} for 3 sessions — drop to ${Math.round(lw*.9/step)*step} and build back.`,w:Math.round(lw*.9/step)*step};
+  const bestSet=last.sets.reduce((a,b)=>(+b.reps>+a.reps?b:a));
+  return {txt:`Stay at ${lw} — last best was ${bestSet.reps} reps, aim for ${Math.min(+bestSet.reps+1,top||99)}.`,w:lw};
+}
+
 function nextDayKey(){
   const lift=sessions().find(s=>!s.ruck && s.day);
   if(!lift)return PROGRAM.rotation[0];
@@ -382,15 +427,26 @@ function renderToday(){
 /* ---------------- LOGGING ---------------------------------------------- */
 let draft=null; // {day, entries:{name:[{weight,reps,done}]}}
 
-function openLog(dayKey){
+function openLog(dayKey,edit){
   const d=resolveDay(dayKey);
-  draft={day:dayKey, name:d.name, loc:curMode(), entries:{}};
-  d.ex.forEach(e=>{
-    const prev=lastSets(e.n);
-    const n=prev?prev.sets.length:e.s;
-    draft.entries[e.n]=Array.from({length:n},()=> ({weight:"",reps:"",done:false}) );
-  });
-  $("#log-title").textContent=d.name;
+  draft={day:dayKey, name:d.name, loc:curMode(), entries:{}, editId:edit?edit.id:null, editDate:edit?edit.date:null};
+  if(edit){
+    // rebuild the exact exercise list that was saved, so edits keep their names
+    d.ex=Object.keys(edit.entries).map(n=>{
+      const m=d.ex.find(x=>x.n===n);
+      return m||{n,s:edit.entries[n].length,r:"—"};
+    });
+    d.ex.forEach(e=>{
+      draft.entries[e.n]=edit.entries[e.n].map(s=>({weight:s.weight,reps:s.reps,done:true}));
+    });
+  }else{
+    d.ex.forEach(e=>{
+      const sg=suggest(e);
+      draft.entries[e.n]=Array.from({length:e.s},()=>({weight:sg.w===""?"":String(sg.w),reps:"",done:false}));
+    });
+  }
+  draft.exList=d.ex;
+  $("#log-title").textContent=edit?"Edit · "+d.name:d.name;
   buildLog(d);
   $$(".screen").forEach(s=>s.classList.remove("on"));
   $("#s-log").classList.add("on");
@@ -400,12 +456,14 @@ function openLog(dayKey){
 }
 function buildLog(d){
   const body=$("#log-body"); body.innerHTML="";
-  d.ex.forEach((e,ei)=>{
+  (draft.exList||d.ex).forEach((e,ei)=>{
     const prev=lastSets(e.n);
     const w=el("div","exwrap"+(ei===0?" open":""));
-    const lastHTML=prev
-      ? `<div class="last">Last time · <b>${prev.sets.filter(s=>s.reps||s.weight).map(s=>`${s.weight||"—"}×${s.reps||"—"}`).join("  ")}</b></div>`
-      : `<div class="last" style="border-style:solid;color:var(--dim);background:none">No history yet — set your baseline.</div>`;
+    const sg=suggest(e), pr=bestE1rm(e.n,draft.editId);
+    const lastHTML=(prev
+      ? `<div class="last">Last time · <b>${prev.sets.filter(s=>s.reps||s.weight).map(s=>`${s.weight||"—"}×${s.reps||"—"}`).join("  ")}</b>${pr?` · best e1RM <b>${Math.round(pr)}</b>`:""}</div>`
+      : "")
+      + `<div class="coach">${esc(sg.txt)}</div>`;
     w.innerHTML=`
       <div class="exhead">
         <div><div class="nm">${esc(e.n)}</div><div class="tgt">Target ${e.s}×${esc(e.r)}</div><div class="prog" data-prog></div></div>
@@ -462,7 +520,7 @@ function setRow(e,si){
   });
   row.querySelector(".done").onclick=()=>{
     st.done=!st.done; row.classList.toggle("logged",st.done);
-    if(st.done){ if(startRest)startRest(90); reprog(e);} 
+    if(st.done){ if(startRest&&DB.get(K.SET,{}).autoRest!==false)startRest(90); reprog(e);} 
   };
   row.querySelector(".rm").onclick=()=>{
     draft.entries[e.n].splice(si,1);
@@ -492,10 +550,24 @@ $("#log-finish").onclick=()=>{
     if(sets.length){clean[k]=sets.map(s=>({weight:s.weight,reps:s.reps}));any=true;}
   }
   if(!any){toast("Log at least one set");return;}
+  // PRs: compare against history excluding this session (so re-editing doesn't self-compare)
+  const prs=[];
+  for(const k in clean){
+    const before=bestE1rm(k,draft.editId);
+    const now=Math.max(...clean[k].map(s=>e1rm(s.weight,s.reps)));
+    if(now>0&&now>before+0.01)prs.push(k);
+  }
   const arr=sessions();
-  arr.unshift({id:uid(),date:Date.now(),day:draft.day,name:draft.name,loc:draft.loc,entries:clean});
-  DB.set(K.S,arr); draft=null;
-  toast("Session saved 💪"); go("today");
+  if(draft.editId){
+    const i=arr.findIndex(x=>x.id===draft.editId);
+    if(i>=0)arr[i]={...arr[i],name:draft.name,loc:draft.loc,entries:clean,prs};
+  }else{
+    arr.unshift({id:uid(),date:Date.now(),day:draft.day,name:draft.name,loc:draft.loc,entries:clean,prs});
+  }
+  const wasEdit=!!draft.editId;
+  DB.set(K.S,arr); draft=null; stopRest();
+  toast(prs.length?`${prs.length} new PR${prs.length>1?"s":""} 🎉`:(wasEdit?"Session updated":"Session saved 💪"));
+  go(wasEdit?"hist":"today");
 };
 
 /* ---------------- RUCK -------------------------------------------------- */
@@ -530,8 +602,10 @@ function renderHistory(){
     if(ses.ruck){right=`<span class="badge ruck">Ruck</span>`;vol=`${ses.dist} mi · ${ses.vest} lb${ses.mins?` · ${ses.mins} min`:""}`;}
     else{
       right=`<span class="badge lift">Lift</span>`;
-      let tot=0,sets=0;for(const k in ses.entries)ses.entries[k].forEach(x=>{tot+=(+x.weight||0)*(+x.reps||0);sets++;});
-      vol=`${sets} sets · ${tot.toLocaleString()} lb volume`;
+      let tot=0,sets=0,exs=0;
+      for(const k in ses.entries){exs++;ses.entries[k].forEach(x=>{tot+=(+x.weight||0)*(+x.reps||0);sets++;});}
+      vol=`${exs} exercise${exs>1?"s":""} · ${sets} set${sets>1?"s":""}`+(tot?` · ${tot.toLocaleString()} lb lifted`:"");
+      if(ses.prs&&ses.prs.length)right=`<span class="badge lift">Lift</span><span class="prbadge">PR</span>`;
     }
     item.innerHTML=`<div><div class="nm">${esc(ses.name)}${ses.loc?` <span style="color:var(--dim);font-weight:600">· ${ses.loc==="home"?"Home":"Gym"}</span>`:""}</div><div class="vol">${vol}</div></div>
       <div style="text-align:right"><div class="dt">${fmtDate(ses.date)}</div><div style="margin-top:5px">${right}</div></div>`;
@@ -547,9 +621,11 @@ function showSession(ses){
     `<div style="margin-bottom:12px"><div style="font-weight:700">${esc(k)}</div><div class="num" style="color:var(--mut);font-size:14px;margin-top:2px">${v.map(x=>`${x.weight||"—"}×${x.reps||"—"}`).join("   ")}</div></div>`).join("");}
   s.innerHTML=`<h3>${esc(ses.name)} <span style="color:var(--dim);font-weight:600;font-size:14px">· ${fmtDate(ses.date)}</span></h3>
     ${inner}<div class="divider"></div>
+    ${ses.ruck?"":`<button class="btn" id="ed" style="margin-bottom:10px">Edit this session</button>`}
     <div class="grid2"><button class="btn danger" id="del">Delete</button><button class="btn ghost" id="cl">Close</button></div>`;
   openSheet();
   $("#cl").onclick=closeSheet;
+  if($("#ed"))$("#ed").onclick=()=>{closeSheet();openLog(ses.day,ses);};
   $("#del").onclick=()=>{if(confirm("Delete this session?")){DB.set(K.S,sessions().filter(x=>x.id!==ses.id));closeSheet();renderHistory();toast("Deleted");}};
 }
 
@@ -599,8 +675,15 @@ $("#bw-save").onclick=()=>{
 };
 
 /* ---------------- TOOLS: timer, plates, data --------------------------- */
-let restLeft=0,restId=null,startRest;
-function paintTimer(){const m=Math.floor(restLeft/60),s=restLeft%60;$("#tmr").textContent=m+":"+String(s).padStart(2,"0");$("#tmr").classList.toggle("run",restId!=null);}
+let restLeft=0,restId=null,startRest,stopRest;
+function paintTimer(){
+  const m=Math.floor(restLeft/60),s=restLeft%60,txt=m+":"+String(s).padStart(2,"0");
+  $("#tmr").textContent=txt; $("#tmr").classList.toggle("run",restId!=null);
+  const pill=$("#restpill");
+  if(restId&&restLeft>0){pill.style.display="flex";pill.querySelector("span").textContent=txt;}
+  else pill.style.display="none";
+}
+stopRest=()=>{if(restId)clearInterval(restId);restId=null;restLeft=0;paintTimer();$("#tmr-startstop").textContent="Start";};
 startRest=(sec)=>{restLeft=sec;if(restId)clearInterval(restId);restId=setInterval(()=>{restLeft--;paintTimer();if(restLeft<=0){clearInterval(restId);restId=null;paintTimer();beep();toast("Rest done");}},1000);paintTimer();$("#tmr-startstop").textContent="Pause";};
 function beep(){try{const a=new(window.AudioContext||window.webkitAudioContext)();const o=a.createOscillator(),g=a.createGain();o.connect(g);g.connect(a.destination);o.frequency.value=880;g.gain.value=.15;o.start();setTimeout(()=>{o.stop();a.close();},250);}catch(e){}}
 $$("#s-tools .chip").forEach(c=>c.onclick=()=>startRest(+c.dataset.t));
@@ -608,7 +691,9 @@ $("#tmr-startstop").onclick=()=>{
   if(restId){clearInterval(restId);restId=null;$("#tmr-startstop").textContent="Resume";paintTimer();}
   else{if(restLeft<=0)restLeft=90;startRest(restLeft);}
 };
-$("#tmr-reset").onclick=()=>{if(restId)clearInterval(restId);restId=null;restLeft=0;paintTimer();$("#tmr-startstop").textContent="Start";};
+$("#tmr-reset").onclick=()=>stopRest();
+$("#restpill").onclick=()=>{stopRest();toast("Rest timer stopped");};
+$("#auto-rest").onchange=e=>{const s=DB.get(K.SET,{unit:"lb"});s.autoRest=e.target.checked;DB.set(K.SET,s);};
 
 function plates(){
   const tot=+$("#pc-target").value||0, bar=+$("#pc-bar").value||0, out=$("#pc-out");
@@ -623,13 +708,13 @@ function plates(){
 }
 ["pc-target","pc-bar"].forEach(id=>$("#"+id).oninput=plates);
 
-function renderTools(){paintTimer();plates();$("#tools-foot").innerHTML=DB.persistent()?"Saved locally on this device.":"⚠ This preview won't save — open the file in your browser or host it to keep your log.";}
+function renderTools(){paintTimer();plates();$("#auto-rest").checked=DB.get(K.SET,{}).autoRest!==false;$("#tools-foot").innerHTML=DB.persistent()?"Saved locally on this device.":"⚠ This preview won't save — open the file in your browser or host it to keep your log.";}
 
 $("#exp").onclick=()=>{
   const data={v:1,exported:Date.now(),sessions:sessions(),bw:DB.get(K.BW,[]),settings:settings()};
   const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
   const url=URL.createObjectURL(blob),a=document.createElement("a");
-  a.href=url;a.download="ironlog-backup-"+new Date().toISOString().slice(0,10)+".json";a.click();
+  a.href=url;a.download="workout-backup-"+new Date().toISOString().slice(0,10)+".json";a.click();
   setTimeout(()=>URL.revokeObjectURL(url),1000); toast("Backup downloaded");
 };
 $("#imp").onclick=()=>{
