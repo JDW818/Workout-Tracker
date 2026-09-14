@@ -73,16 +73,18 @@
   .exwrap.open .exhead{background:var(--panel2)}
   .last{font-size:12px; color:var(--brass); background:rgba(224,165,63,.08); border:1px dashed var(--brass-d); border-radius:8px; padding:7px 10px; margin-bottom:10px}
   .last b{color:var(--ink); font-weight:600}
-  .setrow{display:flex; align-items:center; gap:8px; margin-bottom:8px}
-  .setrow .idx{width:22px; color:var(--dim); font-weight:700; font-size:13px}
-  .stepper{display:flex; align-items:center; background:var(--panel2); border:1px solid var(--line); border-radius:10px; overflow:hidden; flex:1}
-  .stepper button{background:none; border:none; color:var(--brass); font-size:20px; font-weight:700; width:42px; height:44px; cursor:pointer}
-  .stepper button:active{background:rgba(224,165,63,.12)}
-  .stepper input{flex:1; min-width:0; background:none; border:none; color:var(--ink); text-align:center; font-size:17px; font-weight:700; padding:0; outline:none; width:100%}
-  .stepper .u{color:var(--dim); font-size:11px; padding-right:10px}
-  .setrow .done{width:40px; height:44px; border-radius:10px; border:1px solid var(--line); background:var(--panel2); color:var(--dim); font-size:18px; cursor:pointer; flex:none}
+  .setrow{display:grid; grid-template-columns:16px 1fr 1fr 40px 22px; align-items:center; gap:6px; margin-bottom:8px}
+  .setrow.head{margin-bottom:4px}
+  .setrow.head span{font-size:11px; color:var(--dim); font-weight:600; text-align:center}
+  .setrow .idx{color:var(--dim); font-weight:700; font-size:12px; text-align:center}
+  .stepper{display:flex; align-items:center; background:var(--panel2); border:1px solid var(--line); border-radius:10px; overflow:hidden; height:48px}
+  .stepper button{background:none; border:none; color:var(--brass); font-size:22px; font-weight:800; width:34px; height:100%; flex:none; cursor:pointer; padding:0}
+  .stepper button:active{background:rgba(224,165,63,.15)}
+  .stepper input{flex:1; min-width:0; width:100%; background:none; border:none; color:var(--ink); text-align:center; font-size:18px; font-weight:700; padding:0; outline:none}
+  .stepper input::placeholder{color:var(--dim); font-weight:600; font-size:13px}
+  .setrow .done{width:40px; height:48px; border-radius:10px; border:1px solid var(--line); background:var(--panel2); color:var(--dim); font-size:18px; cursor:pointer}
   .setrow.logged .done{background:var(--done); color:#06231a; border-color:var(--done)}
-  .setrow .rm{color:var(--dim); background:none; border:none; font-size:18px; width:30px; cursor:pointer; flex:none}
+  .setrow .rm{color:var(--dim); background:none; border:none; font-size:20px; cursor:pointer; padding:0}
   .addset{width:100%; background:none; border:1px dashed var(--line); color:var(--mut); padding:10px; border-radius:10px; font-size:13.5px; cursor:pointer; font-weight:600}
   .exnote{margin-top:8px; font-size:11.5px; color:var(--dim)}
 
@@ -411,6 +413,7 @@ function buildLog(d){
       </div>
       <div class="setbox${ei===0?" open":""}">
         ${lastHTML}
+        <div class="setrow head"><span></span><span>Weight (lb)</span><span>Reps</span><span></span><span></span></div>
         <div data-sets></div>
         <button class="addset" data-add>+ Add set</button>
         ${e.note?`<div class="exnote">${esc(e.note)}</div>`:""}
@@ -435,18 +438,17 @@ function setRow(e,si){
   row.innerHTML=`
     <div class="idx num">${si+1}</div>
     <div class="stepper">
-      <button data-d="w-">–</button>
-      <input type="number" inputmode="decimal" class="num" placeholder="${isBW?"+0":"wt"}" data-f="weight" value="${st.weight}">
-      <span class="u">lb</span>
-      <button data-d="w+">+</button>
+      <button data-d="w-" tabindex="-1">–</button>
+      <input type="number" inputmode="decimal" enterkeyhint="next" class="num" placeholder="${isBW?"+lb":"lb"}" data-f="weight" value="${st.weight}">
+      <button data-d="w+" tabindex="-1">+</button>
     </div>
     <div class="stepper">
-      <button data-d="r-">–</button>
-      <input type="number" inputmode="numeric" class="num" placeholder="reps" data-f="reps" value="${st.reps}">
-      <button data-d="r+">+</button>
+      <button data-d="r-" tabindex="-1">–</button>
+      <input type="number" inputmode="numeric" enterkeyhint="done" class="num" placeholder="reps" data-f="reps" value="${st.reps}">
+      <button data-d="r+" tabindex="-1">+</button>
     </div>
-    <button class="done">✓</button>
-    <button class="rm">×</button>`;
+    <button class="done" tabindex="-1">✓</button>
+    <button class="rm" tabindex="-1">×</button>`;
   const inW=row.querySelector('[data-f="weight"]'), inR=row.querySelector('[data-f="reps"]');
   inW.oninput=()=>st.weight=inW.value;
   inR.oninput=()=>st.reps=inR.value;
