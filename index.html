@@ -138,6 +138,10 @@
   .seg{display:flex; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:4px; margin-bottom:14px}
   .seg button{flex:1; background:none; border:none; color:var(--mut); font-weight:700; font-size:14px; padding:10px; border-radius:9px; cursor:pointer}
   .seg button.on{background:var(--brass); color:#1a1205}
+  .xprow{display:flex; align-items:center; gap:11px; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-bottom:14px; cursor:pointer}
+  .xprow input{width:21px; height:21px; accent-color:var(--brass); flex:none}
+  .xprow span{font-size:13px; color:var(--mut); line-height:1.35}
+  .xprow b{color:var(--ink)}
 
   /* modal / toast */
   .restpill{position:fixed; left:50%; transform:translateX(-50%); bottom:calc(140px + var(--safe-b)); background:var(--brass); color:#1a1205; padding:9px 16px; border-radius:999px; font-weight:800; font-size:14px; z-index:70; display:none; align-items:center; gap:7px; cursor:pointer; box-shadow:0 6px 18px rgba(0,0,0,.45)}
@@ -309,12 +313,16 @@ const PLATES=[45,35,25,10,5,2.5];
 /* gym / home mode: swaps each exercise to its equipment variant */
 function curMode(){return DB.get(K.SET,{}).mode==="home"?"home":"gym";}
 function setMode(m){const s=DB.get(K.SET,{unit:"lb"});s.mode=m;DB.set(K.SET,s);}
+function isExpress(){return !!DB.get(K.SET,{}).express;}
+function setExpress(v){const s=DB.get(K.SET,{unit:"lb"});s.express=v;DB.set(K.SET,s);}
 function resolveDay(key){
-  const d=PROGRAM.days[key], mode=curMode();
-  return {name:d.name,tag:d.tag,ruck:d.ruck,ex:(d.ex||[]).map(e=>{
+  const d=PROGRAM.days[key], mode=curMode(), xp=isExpress();
+  let ex=(d.ex||[]).map(e=>{
     const h=(mode==="home"&&e.home)?e.home:null;
     return {n:h?h.n:e.n, s:e.s, r:(h&&h.r)?h.r:e.r, bar:h?!!h.bar:!!e.bar, bw:h?!!h.bw:!!e.bw, note:e.note};
-  })};
+  });
+  if(xp&&ex.length)ex=ex.slice(0,3).map(e=>({...e,s:2}));
+  return {name:d.name,tag:xp?"Express":d.tag,ruck:d.ruck,ex};
 }
 
 /* ---------------- helpers ---------------------------------------------- */
@@ -342,7 +350,7 @@ function exHistory(name){
   sessions().forEach(s=>{
     if(s.entries&&s.entries[name]){
       const sets=s.entries[name].filter(x=>x.reps);
-      if(sets.length)out.push({date:s.date,sets,id:s.id});
+      if(sets.length)out.push({date:s.date,sets,id:s.id,xp:!!s.xp});
     }
   });
   return out;
@@ -361,13 +369,14 @@ function suggest(ex){
   const h=exHistory(ex.n), top=topRep(ex.r);
   if(!h.length)return{txt:"First time — pick a weight you could do 2 more reps with.",w:""};
   const last=h[0], lw=Math.max(...last.sets.map(s=>+s.weight||0));
-  const hitAll = top>0 && last.sets.length>=ex.s && last.sets.slice(0,ex.s).every(s=>+s.reps>=top);
+  const hitAll = !last.xp && top>0 && last.sets.length>=ex.s && last.sets.slice(0,ex.s).every(s=>+s.reps>=top);
   const step = ex.bar?5:2.5;
   if(ex.bw && !lw) return hitAll?{txt:`Hit ${top} on every set — add reps or start adding weight.`,w:""}:{txt:`Last time ${last.sets.map(s=>s.reps).join("/")} reps. Beat one of those.`,w:""};
   if(hitAll) return {txt:`Hit all ${top}s at ${lw} — go up to ${lw+step}.`,w:lw+step};
-  // stall check: same top weight 3 sessions running without hitting target
-  const sameW = h.slice(0,3).filter(x=>Math.max(...x.sets.map(s=>+s.weight||0))===lw).length;
-  if(sameW>=3) return {txt:`Stalled at ${lw} for 3 sessions — drop to ${Math.round(lw*.9/step)*step} and build back.`,w:Math.round(lw*.9/step)*step};
+  // stall check: ignore Express sessions, they're intentionally low-volume
+  const full=h.filter(x=>!x.xp);
+  const sameW = full.slice(0,3).filter(x=>Math.max(...x.sets.map(s=>+s.weight||0))===lw).length;
+  if(full.length>=3 && sameW>=3) return {txt:`Stalled at ${lw} for 3 sessions — drop to ${Math.round(lw*.9/step)*step} and build back.`,w:Math.round(lw*.9/step)*step};
   const bestSet=last.sets.reduce((a,b)=>(+b.reps>+a.reps?b:a));
   return {txt:`Stay at ${lw} — last best was ${bestSet.reps} reps, aim for ${Math.min(+bestSet.reps+1,top||99)}.`,w:lw};
 }
@@ -403,6 +412,11 @@ function renderToday(){
   seg.innerHTML=`<button data-m="gym"${curMode()==="gym"?' class="on"':''}>Gym</button><button data-m="home"${curMode()==="home"?' class="on"':''}>Home · DB/KB</button>`;
   seg.querySelectorAll("button").forEach(b=>b.onclick=()=>{setMode(b.dataset.m);renderToday();});
   $("#hero-slot").appendChild(seg);
+  const xp=el("label","xprow");
+  xp.innerHTML=`<input type="checkbox" id="xp-on"${isExpress()?" checked":""}>
+    <span><b>Express</b> · 20 min — top 3 lifts, 2 sets, 60s rest</span>`;
+  xp.querySelector("input").onchange=e=>{setExpress(e.target.checked);renderToday();};
+  $("#hero-slot").appendChild(xp);
   const hero=el("div","hero");
   hero.innerHTML=`<span class="tag">${esc(d.tag)} · up next</span>
     <h1>${esc(d.name)}</h1>
@@ -429,7 +443,7 @@ let draft=null; // {day, entries:{name:[{weight,reps,done}]}}
 
 function openLog(dayKey,edit){
   const d=resolveDay(dayKey);
-  draft={day:dayKey, name:d.name, loc:curMode(), entries:{}, editId:edit?edit.id:null, editDate:edit?edit.date:null};
+  draft={day:dayKey, name:d.name, loc:curMode(), xp:(edit?!!edit.xp:isExpress()), entries:{}, editId:edit?edit.id:null, editDate:edit?edit.date:null};
   if(edit){
     // rebuild the exact exercise list that was saved, so edits keep their names
     d.ex=Object.keys(edit.entries).map(n=>{
@@ -520,7 +534,7 @@ function setRow(e,si){
   });
   row.querySelector(".done").onclick=()=>{
     st.done=!st.done; row.classList.toggle("logged",st.done);
-    if(st.done){ if(startRest&&DB.get(K.SET,{}).autoRest!==false)startRest(90); reprog(e);} 
+    if(st.done){ if(startRest&&DB.get(K.SET,{}).autoRest!==false)startRest(draft&&draft.xp?60:90); reprog(e);} 
   };
   row.querySelector(".rm").onclick=()=>{
     draft.entries[e.n].splice(si,1);
@@ -560,9 +574,9 @@ $("#log-finish").onclick=()=>{
   const arr=sessions();
   if(draft.editId){
     const i=arr.findIndex(x=>x.id===draft.editId);
-    if(i>=0)arr[i]={...arr[i],name:draft.name,loc:draft.loc,entries:clean,prs};
+    if(i>=0)arr[i]={...arr[i],name:draft.name,loc:draft.loc,xp:draft.xp,entries:clean,prs};
   }else{
-    arr.unshift({id:uid(),date:Date.now(),day:draft.day,name:draft.name,loc:draft.loc,entries:clean,prs});
+    arr.unshift({id:uid(),date:Date.now(),day:draft.day,name:draft.name,loc:draft.loc,xp:draft.xp,entries:clean,prs});
   }
   const wasEdit=!!draft.editId;
   DB.set(K.S,arr); draft=null; stopRest();
@@ -607,7 +621,7 @@ function renderHistory(){
       vol=`${exs} exercise${exs>1?"s":""} · ${sets} set${sets>1?"s":""}`+(tot?` · ${tot.toLocaleString()} lb lifted`:"");
       if(ses.prs&&ses.prs.length)right=`<span class="badge lift">Lift</span><span class="prbadge">PR</span>`;
     }
-    item.innerHTML=`<div><div class="nm">${esc(ses.name)}${ses.loc?` <span style="color:var(--dim);font-weight:600">· ${ses.loc==="home"?"Home":"Gym"}</span>`:""}</div><div class="vol">${vol}</div></div>
+    item.innerHTML=`<div><div class="nm">${esc(ses.name)}${ses.loc?` <span style="color:var(--dim);font-weight:600">· ${ses.loc==="home"?"Home":"Gym"}</span>`:""}${ses.xp?` <span style="color:var(--blue);font-weight:600">· Express</span>`:""}</div><div class="vol">${vol}</div></div>
       <div style="text-align:right"><div class="dt">${fmtDate(ses.date)}</div><div style="margin-top:5px">${right}</div></div>`;
     item.onclick=()=>showSession(ses);
     box.appendChild(item);
