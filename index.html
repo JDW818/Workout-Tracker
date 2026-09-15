@@ -16,8 +16,8 @@
     --done:#3fbfa0; --hot:#e5484d; --blue:#5fc9e8;
     --r:12px; --safe-b:env(safe-area-inset-bottom,0px);
   }
-  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-  html,body{margin:0;height:100%}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent; touch-action:manipulation}
+  html,body{margin:0;height:100%; touch-action:manipulation}
   body{
     background:var(--bg); color:var(--ink);
     font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
